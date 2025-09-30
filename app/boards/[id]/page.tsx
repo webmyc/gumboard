@@ -16,6 +16,9 @@ import {
   XIcon,
   StickyNote,
   Plus,
+  UserPlus,
+  Users,
+  Mail,
 } from "lucide-react";
 import Link from "next/link";
 import { BetaBadge } from "@/components/ui/beta-badge";
@@ -101,6 +104,10 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
   });
   const [copiedPublicUrl, setCopiedPublicUrl] = useState(false);
   const [deleteConfirmDialog, setDeleteConfirmDialog] = useState(false);
+  const [boardMembers, setBoardMembers] = useState<any[]>([]);
+  const [boardInvites, setBoardInvites] = useState<any[]>([]);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [isInviting, setIsInviting] = useState(false);
   const boardRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -211,6 +218,14 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardId]);
+
+  useEffect(() => {
+    if (boardSettingsDialog && boardId) {
+      fetchBoardMembers();
+      fetchBoardInvites();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boardSettingsDialog, boardId]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -637,6 +652,87 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
       setTimeout(() => setCopiedPublicUrl(false), 2000);
     } catch (error) {
       console.error("Failed to copy URL:", error);
+    }
+  };
+
+  const fetchBoardMembers = async () => {
+    if (!boardId) return;
+    try {
+      const response = await fetch(`/api/boards/${boardId}/members`);
+      if (response.ok) {
+        const data = await response.json();
+        setBoardMembers(data.members || []);
+      }
+    } catch (error) {
+      console.error("Error fetching board members:", error);
+    }
+  };
+
+  const fetchBoardInvites = async () => {
+    if (!boardId) return;
+    try {
+      const response = await fetch(`/api/boards/${boardId}/invite`);
+      if (response.ok) {
+        const data = await response.json();
+        setBoardInvites(data.invites || []);
+      }
+    } catch (error) {
+      console.error("Error fetching board invites:", error);
+    }
+  };
+
+  const handleInviteUser = async () => {
+    if (!inviteEmail || !boardId) return;
+    
+    setIsInviting(true);
+    try {
+      const response = await fetch(`/api/boards/${boardId}/invite`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email: inviteEmail }),
+      });
+
+      if (response.ok) {
+        toast.success("Invitation sent successfully!");
+        setInviteEmail("");
+        fetchBoardInvites();
+        fetchBoardMembers();
+      } else {
+        const error = await response.json();
+        toast.error(error.error || "Failed to send invitation");
+      }
+    } catch (error) {
+      console.error("Error sending invitation:", error);
+      toast.error("Failed to send invitation");
+    } finally {
+      setIsInviting(false);
+    }
+  };
+
+  const handleRemoveMember = async (userId: string) => {
+    if (!boardId) return;
+    
+    try {
+      const response = await fetch(`/api/boards/${boardId}/members`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ userId }),
+      });
+
+      if (response.ok) {
+        toast.success("Member removed successfully!");
+        fetchBoardMembers();
+      } else {
+        const error = await response.json();
+        toast.error(error.error || "Failed to remove member");
+      }
+    } catch (error) {
+      console.error("Error removing member:", error);
+      toast.error("Failed to remove member");
     }
   };
 
@@ -1194,6 +1290,118 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
             <p className="text-xs text-muted-foreground dark:text-zinc-400 mt-1 ml-6">
               When enabled, note updates will be sent to your organization&apos;s Slack channel
             </p>
+          </div>
+
+          {/* Board Sharing Section */}
+          <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-zinc-700">
+            <div className="flex items-center space-x-2">
+              <Users className="w-4 h-4 text-foreground dark:text-zinc-300" />
+              <h3 className="text-sm font-medium text-foreground dark:text-zinc-100">
+                Board sharing
+              </h3>
+            </div>
+            
+            {/* Invite new user */}
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-foreground dark:text-zinc-200">
+                Invite user by email
+              </label>
+              <div className="flex space-x-2">
+                <Input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="user@example.com"
+                  className="flex-1"
+                />
+                <Button
+                  onClick={handleInviteUser}
+                  disabled={!inviteEmail || isInviting}
+                  size="sm"
+                  className="flex items-center space-x-1"
+                >
+                  <Mail className="w-3 h-3" />
+                  <span>{isInviting ? "Sending..." : "Invite"}</span>
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground dark:text-zinc-400">
+                Send an invitation to collaborate on this board. Users will receive an email to create an account and join.
+              </p>
+            </div>
+
+            {/* Current members */}
+            {boardMembers.length > 0 && (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-foreground dark:text-zinc-200">
+                  Board members ({boardMembers.length})
+                </label>
+                <div className="space-y-2 max-h-32 overflow-y-auto">
+                  {boardMembers.map((member) => (
+                    <div
+                      key={member.id}
+                      className="flex items-center justify-between p-2 bg-gray-50 dark:bg-zinc-800 rounded-md"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-medium">
+                          {member.name?.charAt(0)?.toUpperCase() || member.email.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-foreground dark:text-zinc-100">
+                            {member.name || member.email}
+                          </p>
+                          <p className="text-xs text-muted-foreground dark:text-zinc-400">
+                            {member.email}
+                            {member.isCreator && " • Creator"}
+                          </p>
+                        </div>
+                      </div>
+                      {!member.isCreator && user?.id !== member.id && (
+                        <Button
+                          onClick={() => handleRemoveMember(member.id)}
+                          size="sm"
+                          variant="outline"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Pending invites */}
+            {boardInvites.length > 0 && (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-foreground dark:text-zinc-200">
+                  Pending invitations ({boardInvites.length})
+                </label>
+                <div className="space-y-2 max-h-32 overflow-y-auto">
+                  {boardInvites.map((invite) => (
+                    <div
+                      key={invite.id}
+                      className="flex items-center justify-between p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded-md"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <Mail className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
+                        <div>
+                          <p className="text-sm font-medium text-foreground dark:text-zinc-100">
+                            {invite.email}
+                          </p>
+                          <p className="text-xs text-muted-foreground dark:text-zinc-400">
+                            Invited {new Date(invite.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-xs text-yellow-600 dark:text-yellow-400 font-medium">
+                        Pending
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <AlertDialogFooter className="flex !flex-row justify-start md:justify-between">

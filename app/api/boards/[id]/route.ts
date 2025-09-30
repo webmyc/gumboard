@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { boardSchema } from "@/lib/types";
+import { checkBoardAccess, checkBoardEditAccess } from "@/lib/board-access";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -35,15 +36,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check if user is member of the organization
-    const userInOrg = await db.user.findFirst({
-      where: {
-        id: session.user.id,
-        organizationId: board.organizationId,
-      },
-    });
+    // Check if user has access to the board
+    const access = await checkBoardAccess(session.user.id, boardId, board.organizationId);
 
-    if (!userInOrg) {
+    if (!access.hasAccess) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
@@ -105,32 +101,22 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: "Board not found" }, { status: 404 });
     }
 
-    // Check if user is member of the organization and get admin status
-    const currentUser = await db.user.findFirst({
-      where: {
-        id: session.user.id,
-        organizationId: board.organizationId,
-      },
-      select: {
-        id: true,
-        isAdmin: true,
-      },
-    });
+    // Check if user has access to the board
+    const access = await checkBoardAccess(session.user.id, boardId, board.organizationId);
 
-    if (!currentUser) {
+    if (!access.hasAccess) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    // For name/description/isPublic updates, check if user can edit this board (board creator or admin)
-    if (
-      (name !== undefined || description !== undefined || isPublic !== undefined) &&
-      board.createdBy !== session.user.id &&
-      !currentUser.isAdmin
-    ) {
-      return NextResponse.json(
-        { error: "Only the board creator or admin can edit this board" },
-        { status: 403 }
-      );
+    // For name/description/isPublic updates, check if user can edit this board
+    if (name !== undefined || description !== undefined || isPublic !== undefined) {
+      const canEdit = await checkBoardEditAccess(session.user.id, boardId, board.organizationId);
+      if (!canEdit) {
+        return NextResponse.json(
+          { error: "Only the board creator or admin can edit this board" },
+          { status: 403 }
+        );
+      }
     }
 
     const updateData: {

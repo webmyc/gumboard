@@ -23,43 +23,105 @@ export async function GET() {
       return NextResponse.json({ error: "No organization found" }, { status: 404 });
     }
 
-    // Get all boards for the organization
-    const boards = await db.board.findMany({
-      where: { organizationId: user.organizationId },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        isPublic: true,
-        createdBy: true,
-        createdAt: true,
-        updatedAt: true,
-        _count: {
-          select: {
-            notes: {
-              where: {
-                deletedAt: null,
-                archivedAt: null,
+    // Get boards the user has access to:
+    // 1. Boards in their organization
+    // 2. Boards they're specifically invited to (even if from different organization)
+    const [orgBoards, invitedBoards] = await Promise.all([
+      // Boards in user's organization
+      db.board.findMany({
+        where: { organizationId: user.organizationId },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          isPublic: true,
+          createdBy: true,
+          createdAt: true,
+          updatedAt: true,
+          organizationId: true,
+          _count: {
+            select: {
+              notes: {
+                where: {
+                  deletedAt: null,
+                  archivedAt: null,
+                },
               },
             },
           },
+          notes: {
+            where: {
+              deletedAt: null,
+              archivedAt: null,
+            },
+            select: {
+              updatedAt: true,
+            },
+            orderBy: {
+              updatedAt: "desc",
+            },
+            take: 1,
+          },
         },
-        notes: {
-          where: {
-            deletedAt: null,
-            archivedAt: null,
+        orderBy: { createdAt: "desc" },
+      }),
+      // Boards user is specifically invited to
+      db.board.findMany({
+        where: {
+          boardMembers: {
+            some: {
+              userId: session.user.id,
+            },
           },
-          select: {
-            updatedAt: true,
-          },
-          orderBy: {
-            updatedAt: "desc",
-          },
-          take: 1,
         },
-      },
-      orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          isPublic: true,
+          createdBy: true,
+          createdAt: true,
+          updatedAt: true,
+          organizationId: true,
+          _count: {
+            select: {
+              notes: {
+                where: {
+                  deletedAt: null,
+                  archivedAt: null,
+                },
+              },
+            },
+          },
+          notes: {
+            where: {
+              deletedAt: null,
+              archivedAt: null,
+            },
+            select: {
+              updatedAt: true,
+            },
+            orderBy: {
+              updatedAt: "desc",
+            },
+            take: 1,
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+
+    // Combine and deduplicate boards
+    const allBoards = [...orgBoards];
+    const orgBoardIds = new Set(orgBoards.map(b => b.id));
+    
+    invitedBoards.forEach(board => {
+      if (!orgBoardIds.has(board.id)) {
+        allBoards.push(board);
+      }
     });
+
+    const boards = allBoards;
 
     const boardsWithLastActivityTimestamp = boards.map((board) => ({
       id: board.id,

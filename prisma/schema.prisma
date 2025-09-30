@@ -63,6 +63,8 @@ model User {
   invitedOrganizations OrganizationInvite[]
   createdSelfServeInvites OrganizationSelfServeInvite[]
   notes          Note[]
+  boardInvites   BoardInvite[]
+  boardMembers   BoardMember[]
 
   @@index([organizationId], name: "idx_user_org")
   @@map("users")
@@ -94,6 +96,8 @@ model Board {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   notes          Note[]
+  boardInvites   BoardInvite[]
+  boardMembers   BoardMember[]
 
   // Performance indexes
   @@index([organizationId, createdAt], name: "idx_board_org_created")
@@ -172,6 +176,33 @@ enum InviteStatus {
   PENDING
   ACCEPTED
   DECLINED
+}
+
+model BoardInvite {
+  id        String       @id @default(cuid())
+  email     String
+  boardId   String
+  board     Board        @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  invitedBy String
+  user      User         @relation(fields: [invitedBy], references: [id])
+  createdAt DateTime     @default(now())
+  status    InviteStatus @default(PENDING)
+
+  @@unique([email, boardId])
+  @@map("board_invites")
+}
+
+model BoardMember {
+  id        String   @id @default(cuid())
+  boardId   String
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([boardId, userId])
+  @@index([userId], name: "idx_board_member_user")
+  @@map("board_members")
 }
 
 model VerificationToken {

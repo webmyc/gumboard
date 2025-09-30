@@ -44,3 +44,10 @@ export const inviteSchema = z.object({
 export const memberSchema = z.object({
   isAdmin: z.boolean().default(false),
 });
+
+export const boardInviteSchema = z.object({
+  email: z
+    .string()
+    .email()
+    .transform((email) => email.trim().toLowerCase()),
+});
